@@ -221,13 +221,13 @@ if os.path.isfile(required_file_location)==False or Mode=='RESET':
         total_rows=len(data.axes[0])
         print(UF.TimeStamp(),'The raw data has ',total_rows,' hits')
         print(UF.TimeStamp(),'Removing unreconstructed hits...')
-        data=data.dropna()
+        data=data.dropna() #Remove Single Base Tracks / any unreconstructed track.
         final_rows=len(data.axes[0])
         print(UF.TimeStamp(),'The cleaned data has ',final_rows,' hits')
-        data[BrickID] = data[BrickID].astype(str)
-        data[TrackID] = data[TrackID].astype(str)
+        data[BrickID] = data[BrickID].astype(str) #Cover brick ID into strings 
+        data[TrackID] = data[TrackID].astype(str) #Cover track ID into strings
 
-        data['Rec_Seg_ID'] = data[TrackID] + '-' + data[BrickID]
+        data['Rec_Seg_ID'] = data[TrackID] + '-' + data[BrickID] #creates new unique ID for volume tracks
         data=data.drop([TrackID],axis=1)
         data=data.drop([BrickID],axis=1)
         if SliceData:
@@ -239,12 +239,12 @@ if os.path.isfile(required_file_location)==False or Mode=='RESET':
              final_rows=len(data.axes[0])
              print(UF.TimeStamp(),'The sliced data has ',final_rows,' hits')
         print(UF.TimeStamp(),'Removing tracks which have less than',MinHitsTrack,'hits...')
-        track_no_data=data.groupby(['Rec_Seg_ID'],as_index=False).count()
-        track_no_data=track_no_data.drop([PM.y,PM.z,PM.tx,PM.ty],axis=1)
-        track_no_data=track_no_data.rename(columns={PM.x: "Track_No"})
-        new_combined_data=pd.merge(data, track_no_data, how="left", on=["Rec_Seg_ID"])
-        new_combined_data = new_combined_data[new_combined_data.Track_No >= MinHitsTrack]
-        new_combined_data = new_combined_data.drop(['Track_No'],axis=1)
+        track_no_data=data.groupby(['Rec_Seg_ID'],as_index=False).count() # Counts no. hits per volume track
+        track_no_data=track_no_data.drop([PM.y,PM.z,PM.tx,PM.ty],axis=1) #drops headers
+        track_no_data=track_no_data.rename(columns={PM.x: "Track_No"}) #New name to not interfere with original data
+        new_combined_data=pd.merge(data, track_no_data, how="left", on=["Rec_Seg_ID"]) #attach to original data
+        new_combined_data = new_combined_data[new_combined_data.Track_No >= MinHitsTrack] #drop tracks lower than min hit requirement
+        new_combined_data = new_combined_data.drop(['Track_No'],axis=1) #Drop, since column is not Track_No anymore since we've dropped a bunch of tracks
         new_combined_data=new_combined_data.sort_values(['Rec_Seg_ID',PM.x],ascending=[1,1])
         grand_final_rows=len(new_combined_data.axes[0])
         print(UF.TimeStamp(),'The cleaned data has ',grand_final_rows,' hits')
@@ -256,7 +256,7 @@ if os.path.isfile(required_file_location)==False or Mode=='RESET':
         if len(RemoveTracksZ)>0:
              print(UF.TimeStamp(),'Removing tracks based on start point')
              TracksZdf = pd.DataFrame(RemoveTracksZ, columns = ['Bad_z'], dtype=float)
-             data_aggregated=new_combined_data.groupby(['Rec_Seg_ID'])['z'].min().reset_index()
+             data_aggregated=new_combined_data.groupby(['Rec_Seg_ID'])['z'].min().reset_index() #Identifying position of first hit in the z axis (since Z is discrete)
              data_aggregated=data_aggregated.rename(columns={'z': "PosBad_Z"})
              new_combined_data=pd.merge(new_combined_data, data_aggregated, how="left", on=['Rec_Seg_ID'])
              new_combined_data=pd.merge(new_combined_data, TracksZdf, how="left", left_on=["PosBad_Z"], right_on=['Bad_z'])
