@@ -22,6 +22,7 @@ sys.path.append(AFS_DIR+'/Code/Utilities')
 
 #import libraries
 import argparse
+import pandas as pd
 import ast
 import os
 import time
@@ -116,11 +117,12 @@ def AutoPilot(wait_min, interval_min):
        Model_Meta=Model_Meta_Raw[0]
        Model_Status=Model_Meta.ModelTrainStatus(PM.TST)
        if Model_Status==1:
-              print(UF.TimeStamp(),bcolors.WARNING+'Warning, the model seems to be oversaturated'+bcolors.ENDC)
-              print(UF.TimeStamp(),'Aborting the training...')
-              exit()
+            print(UF.TimeStamp(),bcolors.WARNING+'Warning, the model seems to be oversaturated'+bcolors.ENDC)
+            print(UF.TimeStamp(),'Aborting the training...')
+            exit()
        elif Model_Status==2:
-                 print(UF.TimeStamp(), bcolors.OKGREEN+"Training is finished, starting another session..."+bcolors.ENDC)
+                 print(UF.TimeStamp(), bcolors.OKGREEN+"Training is finished..."+bcolors.ENDC)
+                 print(UF.TimeStamp(), bcolors.OKGREEN+"Starting another session..."+bcolors.ENDC)
                  if Model_Meta.ModelType=='CNN':
                     Job=UF.CreateCondorJobs(AFS_DIR,EOS_DIR,PY_DIR,'/ANNDEA/Data/TRAIN_SET/','N/A','MVx2','N/A',ModelName,1,OptionHeader,OptionLine,'MVx2_TrainModel_Sub.py',False,"['','']", True, True)[0]
                  else:
@@ -172,8 +174,24 @@ if Mode=='RESET':
  ModelMeta=UF.ModelMeta(ModelName)
  if ModelType=='CNN':
     ModelMeta.IniModelMeta(ModelParams, 'Tensorflow', Meta, ModelArchitecture, 'CNN')
+    model = UF.GenerateModel(ModelMeta,[0,0,0,0])
+    model.summary()
+    print(bcolors.BOLD+'IF you are happy with the model please enter Y'+bcolors.ENDC)
+    UserAnswer=input(bcolors.BOLD+"Please, enter your option\n"+bcolors.ENDC)
+    if UserAnswer!='y' and UserAnswer!='Y':
+                        print(UF.TimeStamp(),'OK, exiting now then')
+                        exit() 
  elif ModelType=='GNN':
                     ModelMeta.IniModelMeta(ModelParams, 'PyTorch', Meta, ModelArchitecture, 'GNN')
+                    import torch
+                    device = torch.device('cpu')
+                    model = UF.GenerateModel(ModelMeta).to(device)
+                    print(model)
+                    print(bcolors.BOLD+'IF you are happy with the model please enter Y'+bcolors.ENDC)
+                    UserAnswer=input(bcolors.BOLD+"Please, enter your option\n"+bcolors.ENDC)
+                    if UserAnswer!='y' and UserAnswer!='Y':
+                        print(UF.TimeStamp(),'OK, exiting now then')
+                        exit()
  ModelMeta.IniTrainingSession(TrainSampleID, datetime.datetime.now(), TrainParams)
  print(UF.PickleOperations(Model_Meta_Path, 'w', ModelMeta)[1])
  UF.SubmitJobs2Condor(Job,False,RequestExtCPU,JobFlavour,ReqMemory)
@@ -195,6 +213,27 @@ else:
        Models_Status=Model_Meta.ModelTrainStatus(PM.TST)
        if Models_Status==1:
               print(UF.TimeStamp(),bcolors.WARNING+'Warning, the model seems to be oversaturated'+bcolors.ENDC)
+              Model_Meta_Path=EOSsubModelDIR+'/'+args.ModelName+'_Meta'
+              print(UF.TimeStamp(),'Loading the data file ',bcolors.OKBLUE+Model_Meta_Path+bcolors.ENDC)
+              if os.path.isfile(Model_Meta_Path):
+                   Model_Meta_Raw=UF.PickleOperations(Model_Meta_Path, 'r', 'N/A')
+                   print(Model_Meta_Raw[1])
+                   Model_Meta=Model_Meta_Raw[0]
+                   Header=Model_Meta.TrainSessionsData[0][0]+['Model Parameters','Train Sample ID','LR','Batch Size','Normalised Epochs']
+                   New_Data=[Header]
+                   Print_New_Data=[] 
+                   counter=0
+                   print(UF.TimeStamp(),bcolors.OKGREEN+'The model training profile is printed bellow: '+bcolors.ENDC)
+                   for TSD in range(len(Model_Meta.TrainSessionsData)):
+                       for Record in Model_Meta.TrainSessionsData[TSD][1:]:
+                           counter+=1
+                           New_Data.append(Record+[Model_Meta.ModelParameters,Model_Meta.TrainSessionsDataID[TSD],Model_Meta.TrainSessionsParameters[TSD][0],Model_Meta.TrainSessionsParameters[TSD][1],counter])
+                           Print_New_Data.append(Record)
+                   print(pd.DataFrame(Print_New_Data, columns=Model_Meta.TrainSessionsData[0][0]))
+                   Model_Meta_csv=EOSsubModelDIR+'/'+args.ModelName+'_Out.csv'
+                   UF.LogOperations(Model_Meta_csv,'w', New_Data)
+                   print(UF.TimeStamp(),bcolors.OKGREEN+'Csv output has been saved as '+bcolors.ENDC+bcolors.OKBLUE+Model_Meta_csv+bcolors.ENDC)
+                  
               print(bcolors.BOLD+'If you would like to stop training and exit please enter E'+bcolors.ENDC)
               print(bcolors.BOLD+'If you would like to resubmit your script and exit enter R'+bcolors.ENDC)
               print(bcolors.BOLD+'If you would like to continue training on autopilot please type waiting time in minutes'+bcolors.ENDC)
@@ -226,6 +265,26 @@ else:
                  AutoPilot(int(UserAnswer),Wait)
        elif Models_Status==2:
                  print(UF.TimeStamp(),bcolors.OKGREEN+'The training session has been completed'+bcolors.ENDC)
+                 Model_Meta_Path=EOSsubModelDIR+'/'+args.ModelName+'_Meta'
+                 print(UF.TimeStamp(),'Loading the data file ',bcolors.OKBLUE+Model_Meta_Path+bcolors.ENDC)
+                 if os.path.isfile(Model_Meta_Path):
+                   Model_Meta_Raw=UF.PickleOperations(Model_Meta_Path, 'r', 'N/A')
+                   print(Model_Meta_Raw[1])
+                   Model_Meta=Model_Meta_Raw[0]
+                   Header=Model_Meta.TrainSessionsData[0][0]+['Model Parameters','Train Sample ID','LR','Batch Size','Normalised Epochs']
+                   New_Data=[Header]
+                   Print_New_Data=[] 
+                   counter=0
+                   print(UF.TimeStamp(),bcolors.OKGREEN+'The model training profile is printed bellow: '+bcolors.ENDC)
+                   for TSD in range(len(Model_Meta.TrainSessionsData)):
+                       for Record in Model_Meta.TrainSessionsData[TSD][1:]:
+                           counter+=1
+                           New_Data.append(Record+[Model_Meta.ModelParameters,Model_Meta.TrainSessionsDataID[TSD],Model_Meta.TrainSessionsParameters[TSD][0],Model_Meta.TrainSessionsParameters[TSD][1],counter])
+                           Print_New_Data.append(Record)
+                   print(pd.DataFrame(Print_New_Data, columns=Model_Meta.TrainSessionsData[0][0]))
+                   Model_Meta_csv=EOSsubModelDIR+'/'+args.ModelName+'_Out.csv'
+                   UF.LogOperations(Model_Meta_csv,'w', New_Data)
+                   print(UF.TimeStamp(),bcolors.OKGREEN+'Csv output has been saved as '+bcolors.ENDC+bcolors.OKBLUE+Model_Meta_csv+bcolors.ENDC)
                  print(bcolors.BOLD+'If you would like to stop training and exit please enter E'+bcolors.ENDC)
                  print(bcolors.BOLD+'If you would like to submit another one and exit enter S'+bcolors.ENDC)
                  print(bcolors.BOLD+'If you would like to continue training on autopilot please type waiting time in minutes'+bcolors.ENDC)
@@ -298,8 +357,24 @@ else:
                  ModelMeta=UF.ModelMeta(ModelName)
                  if ModelType=='CNN':
                     ModelMeta.IniModelMeta(ModelParams, 'Tensorflow', Meta, ModelArchitecture, 'CNN')
+                    model = UF.GenerateModel(ModelMeta,[0,0,0,0])
+                    model.summary()
+                    print(bcolors.BOLD+'IF you are happy with the model please enter Y'+bcolors.ENDC)
+                    UserAnswer=input(bcolors.BOLD+"Please, enter your option\n"+bcolors.ENDC)
+                    if UserAnswer!='y' and UserAnswer!='Y':
+                        print(UF.TimeStamp(),'OK, exiting now then')
+                        exit()
                  elif ModelType=='GNN':
                     ModelMeta.IniModelMeta(ModelParams, 'PyTorch', Meta, ModelArchitecture, 'GNN')
+                    import torch
+                    device = torch.device('cpu')
+                    model = UF.GenerateModel(ModelMeta).to(device)
+                    print(model)
+                    print(bcolors.BOLD+'IF you are happy with the model please enter Y'+bcolors.ENDC)
+                    UserAnswer=input(bcolors.BOLD+"Please, enter your option\n"+bcolors.ENDC)
+                    if UserAnswer!='y' and UserAnswer!='Y':
+                        print(UF.TimeStamp(),'OK, exiting now then')
+                        exit()
                  ModelMeta.IniTrainingSession(TrainSampleID, datetime.datetime.now(), TrainParams)
                  print(UF.PickleOperations(Model_Meta_Path, 'w', ModelMeta)[1])
                  UF.SubmitJobs2Condor(Job,False,RequestExtCPU,JobFlavour,ReqMemory)

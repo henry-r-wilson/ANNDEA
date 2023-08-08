@@ -22,6 +22,7 @@ sys.path.append(AFS_DIR+'/Code/Utilities')
 
 #import libraries
 import argparse
+import pandas as pd
 import ast
 import os
 import time
@@ -41,16 +42,16 @@ class bcolors:
 #Set the parsing module
 parser = argparse.ArgumentParser(description='Enter training job parameters')
 parser.add_argument('--ModelName',help="Which model would you like to use as a base for training (please enter N if you want to train a new model from scratch)", default='Default')
-parser.add_argument('--ModelType',help="What Neural Network type would you like to use: CNN/GNN?", default='CNN')
-parser.add_argument('--ModelArchitecture',help="What Type of Image/Graph: CNN, CNN-E", default='CNN')
-parser.add_argument('--ModelParams',help="Please enter the model params: '[<Number of MLP layers>, <'MLP hidden size'>, <Number of IN layers>, <'IN hidden size'>]'", default='[3,80,3,80]')
+parser.add_argument('--ModelType',help="What Neural Network type would you like to use: CNN/GNN?", default='GNN')
+parser.add_argument('--ModelArchitecture',help="What Type of Image/Graph: CNN, CNN-E", default='GMM-6N-IC')
+parser.add_argument('--ModelParams',help="Please enter the model params", default="[[150,3],[150,3],[150,3],[150,3],[],[],[],[],[],[],[7,2],[3000,3000,20000,50]]")
 parser.add_argument('--TrainParams',help="Please enter the train params: '[<Learning Rate>, <Batch size>, <Epochs>]'", default='[0.0001, 4, 10]')
 parser.add_argument('--TrainSampleID',help="Give name to this train sample", default='SHIP_TrainSample_v1')
 parser.add_argument('--Mode',help="Please enter 'Reset' if you want to overwrite the existing model", default='')
-parser.add_argument('--JobFlavour',help="Specifying the length of the HTCondor job walltime. Currently at 'workday' which is 8 hours.", default='workday')
-parser.add_argument('--ReqMemory',help="How much memory to request?", default='2 GB')
+parser.add_argument('--JobFlavour',help="Specifying the length of the HTCondor job wall-time. Currently at 'workday' which is 8 hours.", default='workday')
+parser.add_argument('--ReqMemory',help="How much memory to request?", default='4 GB')
 parser.add_argument('--Wait',help="How many minutes to wait for a job", default='30')
-parser.add_argument('--RequestExtCPU',help="Would you like to request extra CPUs? How Many?", default=1)
+parser.add_argument('--RequestExtCPU',help="Would you like to request extra CPUs? How Many?", default=2)
 args = parser.parse_args()
 
 #setting main learning parameters
@@ -121,6 +122,26 @@ def AutoPilot(wait_min, interval_min):
               exit()
        elif Model_Status==2:
                  print(UF.TimeStamp(), bcolors.OKGREEN+"Training is finished, starting another session..."+bcolors.ENDC)
+                 Model_Meta_Path=EOSsubModelDIR+'/'+args.ModelName+'_Meta'
+                 print(UF.TimeStamp(),'Loading the data file ',bcolors.OKBLUE+Model_Meta_Path+bcolors.ENDC)
+                 if os.path.isfile(Model_Meta_Path):
+                       Model_Meta_Raw=UF.PickleOperations(Model_Meta_Path, 'r', 'N/A')
+                       print(Model_Meta_Raw[1])
+                       Model_Meta=Model_Meta_Raw[0]
+                       Header=Model_Meta.TrainSessionsData[0][0]+['Model Parameters','Train Sample ID','LR','Batch Size','Normalised Epochs']
+                       New_Data=[Header]
+                       Print_New_Data=[] 
+                       counter=0
+                       print(UF.TimeStamp(),bcolors.OKGREEN+'The model training profile is printed bellow: '+bcolors.ENDC)
+                       for TSD in range(len(Model_Meta.TrainSessionsData)):
+                           for Record in Model_Meta.TrainSessionsData[TSD][1:]:
+                               counter+=1
+                               New_Data.append(Record+[Model_Meta.ModelParameters,Model_Meta.TrainSessionsDataID[TSD],Model_Meta.TrainSessionsParameters[TSD][0],Model_Meta.TrainSessionsParameters[TSD][1],counter])
+                               Print_New_Data.append(Record)
+                       print(pd.DataFrame(Print_New_Data, columns=Model_Meta.TrainSessionsData[0][0]))
+                       Model_Meta_csv=EOSsubModelDIR+'/'+args.ModelName+'_Out.csv'
+                       UF.LogOperations(Model_Meta_csv,'w', New_Data)
+                       print(UF.TimeStamp(),bcolors.OKGREEN+'Csv output has been saved as '+bcolors.ENDC+bcolors.OKBLUE+Model_Meta_csv+bcolors.ENDC)  
                  if Model_Meta.ModelType=='CNN':
                     Job=UF.CreateCondorJobs(AFS_DIR,EOS_DIR,PY_DIR,'/ANNDEA/Data/TRAIN_SET/','N/A','MUTr2','N/A',ModelName,1,OptionHeader,OptionLine,'MUTr2_TrainModel_Sub.py',False,"['','']", True, True)[0]
                  else:
@@ -195,6 +216,26 @@ else:
        Models_Status=Model_Meta.ModelTrainStatus(PM.TST)
        if Models_Status==1:
               print(UF.TimeStamp(),bcolors.WARNING+'Warning, the model seems to be over saturated'+bcolors.ENDC)
+              Model_Meta_Path=EOSsubModelDIR+'/'+args.ModelName+'_Meta'
+              print(UF.TimeStamp(),'Loading the data file ',bcolors.OKBLUE+Model_Meta_Path+bcolors.ENDC)
+              if os.path.isfile(Model_Meta_Path):
+                   Model_Meta_Raw=UF.PickleOperations(Model_Meta_Path, 'r', 'N/A')
+                   print(Model_Meta_Raw[1])
+                   Model_Meta=Model_Meta_Raw[0]
+                   Header=Model_Meta.TrainSessionsData[0][0]+['Model Parameters','Train Sample ID','LR','Batch Size','Normalised Epochs']
+                   New_Data=[Header]
+                   Print_New_Data=[] 
+                   counter=0
+                   print(UF.TimeStamp(),bcolors.OKGREEN+'The model training profile is printed bellow: '+bcolors.ENDC)
+                   for TSD in range(len(Model_Meta.TrainSessionsData)):
+                       for Record in Model_Meta.TrainSessionsData[TSD][1:]:
+                           counter+=1
+                           New_Data.append(Record+[Model_Meta.ModelParameters,Model_Meta.TrainSessionsDataID[TSD],Model_Meta.TrainSessionsParameters[TSD][0],Model_Meta.TrainSessionsParameters[TSD][1],counter])
+                           Print_New_Data.append(Record)
+                   print(pd.DataFrame(Print_New_Data, columns=Model_Meta.TrainSessionsData[0][0]))
+                   Model_Meta_csv=EOSsubModelDIR+'/'+args.ModelName+'_Out.csv'
+                   UF.LogOperations(Model_Meta_csv,'w', New_Data)
+                   print(UF.TimeStamp(),bcolors.OKGREEN+'Csv output has been saved as '+bcolors.ENDC+bcolors.OKBLUE+Model_Meta_csv+bcolors.ENDC) 
               print(bcolors.BOLD+'If you would like to stop training and exit please enter E'+bcolors.ENDC)
               print(bcolors.BOLD+'If you would like to resubmit your script and exit enter R'+bcolors.ENDC)
               print(bcolors.BOLD+'If you would like to continue training on autopilot please type waiting time in minutes'+bcolors.ENDC)
@@ -226,6 +267,26 @@ else:
                  AutoPilot(int(UserAnswer),Wait)
        elif Models_Status==2:
                  print(UF.TimeStamp(),bcolors.OKGREEN+'The training session has been completed'+bcolors.ENDC)
+                 Model_Meta_Path=EOSsubModelDIR+'/'+args.ModelName+'_Meta'
+                 print(UF.TimeStamp(),'Loading the data file ',bcolors.OKBLUE+Model_Meta_Path+bcolors.ENDC)
+                 if os.path.isfile(Model_Meta_Path):
+                   Model_Meta_Raw=UF.PickleOperations(Model_Meta_Path, 'r', 'N/A')
+                   print(Model_Meta_Raw[1])
+                   Model_Meta=Model_Meta_Raw[0]
+                   Header=Model_Meta.TrainSessionsData[0][0]+['Model Parameters','Train Sample ID','LR','Batch Size','Normalised Epochs']
+                   New_Data=[Header]
+                   Print_New_Data=[] 
+                   counter=0
+                   print(UF.TimeStamp(),bcolors.OKGREEN+'The model training profile is printed bellow: '+bcolors.ENDC)
+                   for TSD in range(len(Model_Meta.TrainSessionsData)):
+                       for Record in Model_Meta.TrainSessionsData[TSD][1:]:
+                           counter+=1
+                           New_Data.append(Record+[Model_Meta.ModelParameters,Model_Meta.TrainSessionsDataID[TSD],Model_Meta.TrainSessionsParameters[TSD][0],Model_Meta.TrainSessionsParameters[TSD][1],counter])
+                           Print_New_Data.append(Record)
+                   print(pd.DataFrame(Print_New_Data, columns=Model_Meta.TrainSessionsData[0][0]))
+                   Model_Meta_csv=EOSsubModelDIR+'/'+args.ModelName+'_Out.csv'
+                   UF.LogOperations(Model_Meta_csv,'w', New_Data)
+                   print(UF.TimeStamp(),bcolors.OKGREEN+'Csv output has been saved as '+bcolors.ENDC+bcolors.OKBLUE+Model_Meta_csv+bcolors.ENDC) 
                  print(bcolors.BOLD+'If you would like to stop training and exit please enter E'+bcolors.ENDC)
                  print(bcolors.BOLD+'If you would like to submit another one and exit enter S'+bcolors.ENDC)
                  print(bcolors.BOLD+'If you would like to continue training on autopilot please type waiting time in minutes'+bcolors.ENDC)
