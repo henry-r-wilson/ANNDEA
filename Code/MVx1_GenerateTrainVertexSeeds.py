@@ -77,7 +77,7 @@ parser.add_argument('--LabelRatio',help="What is the desired proportion of genui
 parser.add_argument('--TrainSampleSize',help="Maximum number of samples per Training file", default='50000')
 parser.add_argument('--ForceStatus',help="Would you like the program run from specific status number? (Only for advance users)", default='')
 parser.add_argument('--RequestExtCPU',help="Would you like to request extra CPUs?", default=1)
-parser.add_argument('--JobFlavour',help="Specifying the length of the HTCondor job walltime. Currently at 'workday' which is 8 hours.", default='workday')
+parser.add_argument('--JobFlavour',help="Specifying the length of the HTCondor job wall time. Currently at 'workday' which is 8 hours.", default='workday')
 parser.add_argument('--LocalSub',help="Local submission?", default='N')
 parser.add_argument('--SubPause',help="How long to wait in minutes after submitting 10000 jobs?", default='60')
 parser.add_argument('--SubGap',help="How long to wait in minutes after submitting 10000 jobs?", default='10000')
@@ -89,6 +89,8 @@ parser.add_argument('--MaxAngle',help="Maximum magnitude of angle allowed", defa
 parser.add_argument('--ReqMemory',help="How much memory to request?", default='2 GB')
 parser.add_argument('--FiducialVolumeCut',help="Limits on the vx, y, z coordinates of the vertex origin", default='[]')
 parser.add_argument('--RemoveTracksZ',help="This option enables to remove particular tracks of starting Z-coordinate", default='[]')
+parser.add_argument('--ExcludeClassNames',help="What class headers to use?", default="[]")
+parser.add_argument('--ExcludeClassValues',help="What class values to use?", default="[[]]")
 ######################################## Parsing argument values  #############################################################
 args = parser.parse_args()
 Mode=args.Mode.upper()
@@ -110,9 +112,23 @@ MaxAngle=float(args.MaxAngle)
 RequestExtCPU=int(args.RequestExtCPU)
 ReqMemory=args.ReqMemory
 FiducialVolumeCut=ast.literal_eval(args.FiducialVolumeCut)
+ExcludeClassNames=ast.literal_eval(args.ExcludeClassNames)
+ExcludeClassValues=ast.literal_eval(args.ExcludeClassValues)
+ColumnsToImport=[TrackID,BrickID,PM.x,PM.y,PM.z,PM.tx,PM.ty,PM.MC_Event_ID,PM.MC_VX_ID]
+ExtraColumns=[]
+BanDF=['-']
+BanDF=pd.DataFrame(BanDF, columns=['Exclude'])
+for i in range(len(ExcludeClassNames)):
+        df=pd.DataFrame(ExcludeClassValues[i], columns=[ExcludeClassNames[i]])
+        df['Exclude']='-'
+        BanDF=pd.merge(BanDF,df,how='inner',on=['Exclude'])
+
+        if (ExcludeClassNames[i] in ExtraColumns)==False:
+                ExtraColumns.append(ExcludeClassNames[i])
+
 RemoveTracksZ=ast.literal_eval(args.RemoveTracksZ)
 Xmin,Xmax,Ymin,Ymax=float(args.Xmin),float(args.Xmax),float(args.Ymin),float(args.Ymax)
-SliceData=max(Xmin,Xmax,Ymin,Ymax)>0 #We don't slice data if all values are set to zero simultaneousy (which is the default setting)
+SliceData=max(Xmin,Xmax,Ymin,Ymax)>0 #We don't slice data if all values are set to zero simultaneously (which is the default setting)
 LocalSub=(args.LocalSub=='Y')
 if LocalSub:
    time_int=0
@@ -134,12 +150,17 @@ if os.path.isfile(required_file_location)==False or Mode=='RESET':
         print(UF.TimeStamp(),'Loading raw data from',bcolors.OKBLUE+input_file_location+bcolors.ENDC)
         data=pd.read_csv(input_file_location,
                     header=0,
-                    usecols=[TrackID,BrickID,
-                            PM.x,PM.y,PM.z,PM.tx,PM.ty,
-                            PM.MC_Event_ID,PM.MC_VX_ID])
+                    usecols=ColumnsToImport+ExtraColumns)
         total_rows=len(data)
         print(UF.TimeStamp(),'The raw data has ',total_rows,' hits')
         print(UF.TimeStamp(),'Removing unreconstructed hits...')
+        if len(ExtraColumns)>0:
+            for c in ExtraColumns:
+                data[c] = data[c].astype(str)
+            data=pd.merge(data,BanDF,how='left',on=ExtraColumns)
+            data=data.fillna('')
+        else:
+            data['Exclude']=''
         data=data.dropna()
         final_rows=len(data)
         print(UF.TimeStamp(),'The cleaned data has ',final_rows,' hits')
@@ -148,11 +169,14 @@ if os.path.isfile(required_file_location)==False or Mode=='RESET':
         data[TrackID] = data[TrackID].astype(str)
         data[BrickID] = data[BrickID].astype(str)
         data['Rec_Seg_ID'] = data[TrackID] + '-' + data[BrickID]
-        data['MC_VX_ID'] = data[PM.MC_Event_ID] + '-' + data[PM.MC_VX_ID]
+        data['MC_VX_ID'] = data[PM.MC_Event_ID] + '-' + data['Exclude'] + data[PM.MC_VX_ID]
         data=data.drop([TrackID],axis=1)
         data=data.drop([BrickID],axis=1)
         data=data.drop([PM.MC_Event_ID],axis=1)
         data=data.drop([PM.MC_VX_ID],axis=1)
+        data=data.drop(['Exclude'],axis=1)
+        for c in ExtraColumns:
+            data=data.drop([c],axis=1)
         compress_data=data.drop([PM.x,PM.y,PM.z,PM.tx,PM.ty],axis=1)
         compress_data['MC_Mother_No']= compress_data['MC_VX_ID']
         compress_data=compress_data.groupby(by=['Rec_Seg_ID','MC_VX_ID'])['MC_Mother_No'].count().reset_index()
@@ -161,11 +185,11 @@ if os.path.isfile(required_file_location)==False or Mode=='RESET':
         data=data.drop(['MC_VX_ID'],axis=1)
         compress_data=compress_data.drop(['MC_Mother_No'],axis=1)
         data=pd.merge(data, compress_data, how="left", on=['Rec_Seg_ID'])
-
+        
         if SliceData:
              print(UF.TimeStamp(),'Slicing the data...')
              ValidEvents=data.drop(data.index[(data[PM.x] > Xmax) | (data[PM.x] < Xmin) | (data[PM.y] > Ymax) | (data[PM.y] < Ymin)])
-             ValidEvents.drop([PM.x,PM.y,PM.z,PM.tx,PM.ty,'MC_VX_ID'],axis=1,inplace=True)
+             ValidEvents.drop([PM.x,PM.y,PM.z,PM.tx,PM.ty,'MC_VX_ID']+ExtraColumns,axis=1,inplace=True)
              ValidEvents.drop_duplicates(subset='Rec_Seg_ID',keep='first',inplace=True)
              data=pd.merge(data, ValidEvents, how="inner", on=['Rec_Seg_ID'])
              final_rows=len(data.axes[0])
@@ -211,7 +235,7 @@ if os.path.isfile(required_file_location)==False or Mode=='RESET':
         data = data.values.tolist()
         print(UF.TimeStamp(), bcolors.OKGREEN+"The track segment data has been created successfully and written to"+bcolors.ENDC, bcolors.OKBLUE+output_file_location+bcolors.ENDC)
         Meta=UF.TrainingSampleMeta(TrainSampleID)
-        Meta.IniVertexSeedMetaData(MaxDST,MaxVXT,MaxDOCA,MaxAngle,data,PM.MaxSegments,PM.VetoVertex,PM.MaxSeeds,MinHitsTrack,FiducialVolumeCut)
+        Meta.IniVertexSeedMetaData(MaxDST,MaxVXT,MaxDOCA,MaxAngle,data,PM.MaxSegments,PM.MaxSeeds,MinHitsTrack,FiducialVolumeCut,ExcludeClassNames,ExcludeClassValues)
         Meta.UpdateStatus(0)
         print(UF.PickleOperations(TrainSampleOutputMeta,'w', Meta)[1])
         print(bcolors.HEADER+"########################################################################################################"+bcolors.ENDC)
@@ -227,9 +251,10 @@ MaxAngle=Meta.MaxAngle
 JobSets=Meta.JobSets
 MaxSegments=Meta.MaxSegments
 MaxSeeds=Meta.MaxSeeds
-VetoVertex=Meta.VetoVertex
 MinHitsTrack=Meta.MinHitsTrack
 FiducialVolumeCut=Meta.FiducialVolumeCut
+ExcludeClassNames=Meta.ClassNames
+ExcludeClassValues=Meta.ClassValues
 TotJobs=0
 for j in range(0,len(JobSets)):
           for sj in range(0,int(JobSets[j][2])):
@@ -416,8 +441,8 @@ elif type(job_sets[0][0]) is int:
 
 prog_entry.append(' Sending hit cluster to the HTCondor, so tack segment combination pairs can be formed...')
 prog_entry.append([AFS_DIR,EOS_DIR,PY_DIR,'/ANNDEA/Data/TRAIN_SET/','RawSeedsRes','MVx1a','.csv',TrainSampleID,job_sets,'MVx1a_GenerateRawSelectedSeeds_Sub.py'])
-prog_entry.append([ " --MaxSegments ", " --MaxDST "," --VetoVertex "])
-prog_entry.append([MaxSegments, MaxDST,'"'+str(VetoVertex)+'"'])
+prog_entry.append([ " --MaxSegments ", " --MaxDST "])
+prog_entry.append([MaxSegments, MaxDST])
 prog_entry.append(TotJobs)
 prog_entry.append(LocalSub)
 prog_entry.append([" --PlateZ ",JobSets])
