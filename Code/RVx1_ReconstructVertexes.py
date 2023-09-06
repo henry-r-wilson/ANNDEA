@@ -129,7 +129,7 @@ if Log and (os.path.isfile(required_eval_file_location)==False or Mode=='RESET')
            MetaInput=UF.PickleOperations(EOSsubModelMetaDIR,'r', 'N/A')
            Meta=MetaInput[0]
            MinHitsTrack=Meta.MinHitsTrack
-           if Meta.hasattr('ClassNames') and Meta.hasattr('ClassValues'):
+           if hasattr(Meta,'ClassNames') and hasattr(Meta,'ClassValues'):
                ExcludeClassNames='ClassNames'
                ExcludeClassValues='ClassValues'
            else:
@@ -151,6 +151,13 @@ if Log and (os.path.isfile(required_eval_file_location)==False or Mode=='RESET')
                 header=0,
                 usecols=ColumnsToImport+ExtraColumns)
     total_rows=len(data)
+    if len(ExtraColumns)>0:
+            for c in ExtraColumns:
+                data[c] = data[c].astype(str)
+            data=pd.merge(data,BanDF,how='left',on=ExtraColumns)
+            data=data.fillna('')
+    else:
+            data['Exclude']=''
     print(UF.TimeStamp(),'The raw data has ',total_rows,' hits')
     print(UF.TimeStamp(),'Removing unreconstructed hits...')
     data=data.dropna()
@@ -162,15 +169,18 @@ if Log and (os.path.isfile(required_eval_file_location)==False or Mode=='RESET')
     data[TrackID] = data[TrackID].astype(str)
     data['Rec_Seg_ID'] = data[TrackID] + '-' + data[BrickID]
     data['MC_Vertex_ID'] = data[PM.MC_Event_ID] + '-'+ data['Exclude'] + data[PM.MC_VX_ID]
+    
     data=data.drop([TrackID],axis=1)
     data=data.drop([BrickID],axis=1)
     data=data.drop([PM.MC_Event_ID],axis=1)
     data=data.drop([PM.MC_VX_ID],axis=1)
+    data=data.drop(['Exclude'],axis=1)
     compress_data=data.drop([PM.x,PM.y,PM.z,PM.tx,PM.ty],axis=1)
     compress_data['MC_Mother_No']= compress_data['MC_Vertex_ID']
-    compress_data=compress_data.groupby(by=['Rec_Seg_ID','MC_Vertex_ID'])['MC_Vertex_ID'].count().reset_index()
+    compress_data=compress_data.groupby(by=['Rec_Seg_ID','MC_Vertex_ID'])['MC_Mother_No'].count().reset_index()
     compress_data=compress_data.sort_values(['Rec_Seg_ID','MC_Mother_No'],ascending=[1,0])
     compress_data.drop_duplicates(subset='Rec_Seg_ID',keep='first',inplace=True)
+    data=data.drop(['MC_Vertex_ID'],axis=1)
     compress_data=compress_data.drop(['MC_Mother_No'],axis=1)
     data=pd.merge(data, compress_data, how="left", on=['Rec_Seg_ID'])
     if SliceData:
@@ -299,7 +309,7 @@ if os.path.isfile(required_file_location)==False or Mode=='RESET':
         data = data.values.tolist()
         print(UF.TimeStamp(), bcolors.OKGREEN+"The track segment data has been created successfully and written to"+bcolors.ENDC, bcolors.OKBLUE+required_file_location+bcolors.ENDC)
         Meta=UF.TrainingSampleMeta(RecBatchID)
-        Meta.IniVertexSeedMetaData(MaxDST,MaxVXT,MaxDOCA,MaxAngle,data,MaxSegments,PM.VetoVertex,MaxSeeds,MinHitsTrack,FiducialVolumeCut)
+        Meta.IniVertexSeedMetaData(MaxDST,MaxVXT,MaxDOCA,MaxAngle,data,MaxSegments,MaxSeeds,MinHitsTrack,FiducialVolumeCut,ExcludeClassNames,ExcludeClassValues)
         Meta.UpdateStatus(0)
         print(UF.PickleOperations(RecOutputMeta,'w', Meta)[1])
         print(bcolors.HEADER+"########################################################################################################"+bcolors.ENDC)
@@ -746,7 +756,7 @@ while Status<len(Program):
         base_data.drop(base_data.index[base_data['Seed_CNN_Fit'] < PM.pre_vx_acceptance],inplace=True)  # Dropping the seeds that don't pass the link fit threshold
         Records_After_Compression=len(base_data)
         if args.Log=='Y':
-          try:
+          #try:
              print(UF.TimeStamp(),'Initiating the logging...')
              eval_data_file=EOS_DIR+'/ANNDEA/Data/TEST_SET/EVx1b_'+RecBatchID+'_SEED_TRUTH_COMBINATIONS.csv'
              eval_data=pd.read_csv(eval_data_file,header=0,usecols=['Segment_1','Segment_2'])
@@ -766,8 +776,8 @@ while Status<len(Program):
              rec_no=(len(rec)-len(rec_eval))
              UF.LogOperations(EOS_DIR+'/ANNDEA/Data/REC_SET/'+RecBatchID+'_REC_LOG.csv', 'a', [[5,'Link Analysis',rec_no,eval_no,eval_no/(rec_no+eval_no),eval_no/len(eval_data)]])
              print(UF.TimeStamp(), bcolors.OKGREEN+"The log has been created successfully at "+bcolors.ENDC, bcolors.OKBLUE+EOS_DIR+'/ANNDEA/Data/REC_SET/'+RecBatchID+'_REC_LOG.csv'+bcolors.ENDC)
-          except:
-               print(UF.TimeStamp(), bcolors.WARNING+'Log creation has failed'+bcolors.ENDC)
+          #except:
+           #    print(UF.TimeStamp(), bcolors.WARNING+'Log creation has failed'+bcolors.ENDC)
         print(UF.TimeStamp(), 'Decorating seed objects in ' + bcolors.ENDC,bcolors.OKBLUE + input_file_location + bcolors.ENDC)
         base_data=base_data.values.tolist()
         new_data=[]
